@@ -1,0 +1,137 @@
+team_code,team_name,rating,offense,defense
+OSU,Ohio State,31.6,39.1,7.6
+IU,Indiana,30.4,40.2,10.2
+TTU,Texas Tech,30.3,42.0,12.1
+ORE,Oregon,27.1,39.0,12.3
+UGA,Georgia,24.9,37.5,13.3
+ND,Notre Dame,24.4,40.1,16.1
+MISS,Ole Miss,23.1,40.0,17.7
+TA&M,Texas A&M,22.0,40.0,17.9
+MIA,Miami,21.9,36.5,15.2
+UTAH,Utah,21.5,39.3,17.9
+VAN,Vanderbilt,21.0,40.9,20.6
+OU,Oklahoma,19.4,30.7,11.9
+ALA,Alabama,18.6,33.9,14.7
+IOWA,Iowa,17.7,31.2,14.1
+USC,USC,17.5,39.3,21.3
+WASH,Washington,16.2,33.5,16.9
+MIZ,Missouri,16.0,33.1,16.5
+PSU,Penn State,15.7,35.8,20.8
+BYU,BYU,15.6,34.5,19.1
+TENN,Tennessee,15.2,40.2,25.4
+UNT,North Texas,14.9,42.8,28.0
+TEX,Texas,14.7,32.2,17.9
+USF,South Florida,14.3,39.8,25.4
+JMU,James Madison,14.2,34.8,20.3
+ARIZ,Arizona,13.9,34.0,19.5
+SMU,SMU,13.6,34.8,20.7
+MICH,Michigan,13.5,30.5,16.3
+AUB,Auburn,11.9,29.1,17.4
+LOU,Louisville,11.7,31.9,20.6
+ILL,Illinois,10.9,32.7,22.2
+UVA,Virginia,10.5,30.2,20.0
+CLEM,Clemson,9.9,29.2,19.7
+LSU,LSU,9.7,24.4,14.9
+MEM,Memphis,9.6,36.4,27.4
+ISU,Iowa State,9.4,28.5,19.7
+PITT,Pittsburgh,8.9,33.2,24.5
+GT,Georgia Tech,8.7,33.5,25.5
+TOL,Toledo,8.4,26.8,17.9
+TCU,TCU,8.4,32.7,24.0
+ECU,East Carolina,8.1,33.1,24.8
+HOU,Houston,7.9,30.5,22.2
+TULN,Tulane,7.7,33.8,26.8
+FSU,Florida State,7.2,29.5,22.0
+CONN,UConn,7.0,33.4,27.1
+KSU,Kansas State,6.7,31.6,25.2
+NEB,Nebraska,6.6,28.8,22.2
+SDSU,San Diego State,6.4,23.1,17.5
+ODU,Old Dominion,6.3,32.0,24.8
+CIN,Cincinnati,6.2,31.8,25.9
+BOIS,Boise State,5.9,30.6,24.2
+DUKE,Duke,5.5,34.5,29.3
+UNLV,UNLV,5.4,36.0,30.8
+SC,South Carolina,5.3,25.1,20.4
+ARK,Arkansas,4.9,36.3,31.7
+ASU,Arizona State,4.9,27.2,21.4
+WAKE,Wake Forest,4.5,25.5,21.1
+NAVY,Navy,4.3,33.8,29.9
+MSST,Mississippi State,3.9,31.8,28.5
+KU,Kansas,3.3,31.3,28.7
+WSU,Washington State,3.1,23.4,20.5
+FLA,Florida,2.9,25.1,22.8
+NCSU,NC State,2.8,31.3,27.8
+UK,Kentucky,1.9,25.9,23.9
+NU,Northwestern,1.8,23.2,22.0
+UNM,New Mexico,1.5,27.2,26.4
+UTSA,UTSA,1.4,32.1,31.0
+FRES,Fresno State,1.4,23.7,22.3
+HAW,Hawai'i,1.2,26.8,26.3
+BAY,Baylor,0.8,33.4,33.4
+MINN,Minnesota,0.6,23.9,22.7
+WKU,Western Kentucky,0.6,29.1,29.0
+TXST,Texas State,0.3,36.5,36.2
+RUTG,Rutgers,0.2,31.6,31.5
+MD,Maryland,-0.5,24.5,25.3
+USU,Utah State,-0.5,30.6,30.4
+LT,Louisiana Tech,-0.8,26.5,27.2
+UCF,UCF,-1.0,23.5,24.3
+KENN,Kennesaw State,-1.7,28.1,29.2
+ARMY,Army,-1.8,23.1,24.8
+WMU,Western Michigan,-2.7,20.8,23.1
+OHIO,Ohio,-2.8,24.6,26.6
+CAL,California,-3.2,24.9,28.0
+MSU,Michigan State,-3.3,26.7,29.5
+AF,Air Force,-3.4,28.5,31.9
+M-OH,Miami (OH),-3.4,21.0,25.1
+WIS,Wisconsin,-4.5,17.5,21.6
+TROY,Troy,-4.7,25.2,30.2
+MRSH,Marshall,-5.2,29.9,35.4
+USM,Southern Miss,-5.6,28.0,33.0
+CMU,Central Michigan,-5.7,19.5,25.0
+JXST,Jacksonville State,-5.8,28.7,33.8
+TEM,Temple,-5.9,27.3,33.5
+WVU,West Virginia,-7.1,23.1,30.3
+FIU,Florida International,-7.3,27.3,34.1
+COLO,Colorado,-7.6,22.8,29.8
+PUR,Purdue,-7.9,21.9,30.6
+UNC,North Carolina,-8.0,17.3,25.8
+LIB,Liberty,-8.4,24.9,33.0
+MOST,Missouri State,-8.5,25.6,33.6
+BUF,Buffalo,-8.7,18.5,27.9
+UL,Louisiana,-8.7,26.7,34.9
+FAU,Florida Atlantic,-9.4,28.3,38.3
+UCLA,UCLA,-9.5,21.7,31.2
+BC,Boston College,-9.6,23.6,33.7
+ARST,Arkansas State,-9.7,23.5,33.3
+VT,Virginia Tech,-10.3,21.5,31.5
+APP,App State,-10.3,24.2,34.9
+DEL,Delaware,-10.5,27.2,37.3
+WYO,Wyoming,-10.6,15.2,25.0
+TLSA,Tulsa,-11.2,21.7,33.5
+GASO,Georgia Southern,-11.3,28.2,39.2
+STAN,Stanford,-11.4,18.6,29.3
+USA,South Alabama,-12.0,25.5,36.7
+AKR,Akron,-12.9,17.6,29.8
+BGSU,Bowling Green,-13.2,15.8,29.3
+SJSU,San José State,-13.5,21.7,34.6
+CCU,Coastal Carolina,-13.7,24.4,38.0
+NEV,Nevada,-14.2,14.3,28.9
+RICE,Rice,-14.2,18.5,33.1
+SYR,Syracuse,-14.3,19.0,33.8
+ORST,Oregon State,-14.9,16.7,30.8
+EMU,Eastern Michigan,-15.0,19.6,34.6
+UAB,UAB,-15.2,25.7,40.2
+NMSU,New Mexico State,-15.2,20.1,35.1
+CSU,Colorado State,-15.5,17.7,33.1
+OKST,Oklahoma State,-15.6,15.7,31.8
+MTSU,Middle Tennessee,-16.3,20.8,37.2
+UTEP,UTEP,-16.5,20.5,36.5
+NIU,Northern Illinois,-16.6,12.3,28.6
+KENT,Kent State,-18.6,17.4,35.4
+ULM,UL Monroe,-20.9,16.2,36.3
+BALL,Ball State,-22.0,13.7,34.9
+GAST,Georgia State,-23.9,18.8,41.9
+CLT,Charlotte,-26.1,14.7,40.2
+SHSU,Sam Houston,-27.3,15.4,42.1
+MASS,Massachusetts,-36.2,7.9,43.5
