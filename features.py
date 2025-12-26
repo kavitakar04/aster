@@ -4,8 +4,7 @@ import math
 import torch
 from typing import Optional, Iterable, Dict, Any
 
-from orderbook import OrderbookState, Trade, EventType
-from pipeline_logger import TickStore
+from orderbook import OrderbookState, Trade, EventType, TickStore
 
 TRADE_IMB_WINDOW_SEC: float = 30.0
 QUOTE_VEL_WINDOW_SEC: float = 10.0
@@ -30,9 +29,9 @@ def _compute_trade_imbalance(trades: Iterable[Trade], as_of_ts: float) -> float:
 
 
 def _compute_quote_velocity(
-    ticks: TickStore, 
-    market_id: str, 
-    as_of_ts: float, 
+    ticks: TickStore,
+    market_id: str,
+    as_of_ts: float,
     override: Optional[float] = None
 ) -> float:
     """Event arrival rate (ticks/sec)."""
@@ -46,6 +45,12 @@ def compute_micro_features(
     as_of_ts: float,
     meta: Optional[Dict[str, Any]] = None,
 ) -> torch.Tensor:
+    """
+    Extract orderbook-based features for real-time inference.
+
+    Feature vector (9 dimensions):
+      [midpoint, spread, depth_imb, trade_imb, quote_vel, q_stale, t_stale, time_to_start, rating_diff]
+    """
     meta = meta or {}
 
     q_stale = (

@@ -72,42 +72,81 @@ def _get_canonical_team(raw_code: str, valid_teams: list[str]) -> str | None:
     match, score = process.extractOne(query, valid_teams)
     return match if score >= 80 else None
 
+import pandas as pd
+
 def build_registry(markets: list[dict], year: int = 2025) -> pd.DataFrame:
-    """Match Kalshi markets to CFBD ratings and return registry DataFrame."""
+    """
+    Build a meta registry for Kalshi markets.
+
+    - Every market in `markets` gets a row.
+    - CFBD ratings are attached when both teams can be resolved.
+    - Missing ratings / times are allowed and stored as None/NaN.
+    """
+    # Load ratings and index by team_code
     ratings_path = ensure_ratings_file(year)
-    ratings_df = pd.read_csv(ratings_path).set_index("team_code")
+    ratings_df = pd.read_csv(ratings_path)
+
+    if "team_code" not in ratings_df.columns:
+        raise ValueError(f"'team_code' column not found in ratings file: {ratings_path}")
+
+    ratings_df = ratings_df.set_index("team_code")
     valid_teams = set(ratings_df.index)
 
-    registry = {}
+    rows = []
+
     for m in markets:
-        # Parse ticker: KXNCAAF-YYYYMMDD-TEAM1-TEAM2
-        parts = m["ticker"].split("-")
-        if len(parts) < 4: 
-            continue
-        
-        team_a = _get_canonical_team(parts[-2], valid_teams)
-        team_b = _get_canonical_team(parts[-1], valid_teams)
-        
-        if team_a and team_b:
-            ra = ratings_df.loc[team_a].rating
-            rb = ratings_df.loc[team_b].rating
-            
-            # Determine start time (Open or Expiry)
-            ts = m.get("open_time") or m.get("expiration_time")
-            
-            registry[m["ticker"]] = {
+        ticker = m.get("ticker", "")
+        parts = ticker.split("-")
+
+        # Basic parse: last two segments are usually teams, but we don't drop if it's weird
+        team_a_raw = parts[-2] if len(parts) >= 4 else None
+        team_b_raw = parts[-1] if len(parts) >= 4 else None
+
+        team_a = _get_canonical_team(team_a_raw, valid_teams) if team_a_raw else None
+        team_b = _get_canonical_team(team_b_raw, valid_teams) if team_b_raw else None
+
+        has_ratings = (team_a in valid_teams) and (team_b in valid_teams)
+
+        ra = rb = rating_diff = None
+        if has_ratings:
+            ra = float(ratings_df.at[team_a, "rating"])
+            rb = float(ratings_df.at[team_b, "rating"])
+            rating_diff = ra - rb
+
+        # Event start: use open_time, then expiration_time, else None
+        ts = m.get("open_time") or m.get("expiration_time")
+        event_start_ts = pd.Timestamp(ts).timestamp() if ts is not None else None
+
+        rows.append(
+            {
+                "ticker": ticker,
+                # Teams nested dict for compatibility with pipeline
                 "teams": {"a": team_a, "b": team_b},
-                "rating_diff": float(ra - rb),
-                "event_start_ts": pd.Timestamp(ts).timestamp(),
-                "strike_price": m.get("strike_price")
+                # raw team codes from ticker
+                "team_a_raw": team_a_raw,
+                "team_b_raw": team_b_raw,
+                # canonical team codes (may be None)
+                "team_a": team_a,
+                "team_b": team_b,
+                # ratings info
+                "has_ratings": has_ratings,
+                "team_a_rating": ra,
+                "team_b_rating": rb,
+                "rating_diff": rating_diff,
+                # timing + strike
+                "event_start_ts": event_start_ts,
+                "strike_price": m.get("strike_price"),
             }
+        )
 
-    return pd.DataFrame.from_dict(registry, orient="index")
+    df = pd.DataFrame(rows)
+    # Use ticker as index if present
+    if not df.empty and "ticker" in df.columns:
+        df = df.set_index("ticker")
 
+    return df
 
 if __name__ == "__main__":
-    # Standalone usage: Build registry from live Kalshi markets
-    # Note: Requires io_kalshi to be present in the environment
     from io_kalshi import fetch_ncaaf_markets
     
     print("[cfbd] Fetching active markets...")

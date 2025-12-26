@@ -1,6 +1,7 @@
 """Kalshi I/O: REST + WebSocket utilities."""
 
 from __future__ import annotations
+from urllib.parse import urlparse
 
 import asyncio
 import base64
@@ -171,18 +172,13 @@ def fetch_orderbook_history(
 
     resp = requests.get(url, params=params, headers=_auth_headers(), timeout=30)
     resp.raise_for_status()
-
-    # The API returns {"trades": [...]}
     return resp.json().get("trades", [])
 def _normalize_rest_message(msg: Dict[str, Any], default_market_id: str) -> Optional[RawEvent]:
     """Normalize REST trade event."""
-    # Check if this is a trade object (it has 'trade_id' or 'taker_side')
     if "trade_id" in msg or "taker_side" in msg:
         # Created time is ISO string in REST, convert to timestamp
         c_time = msg.get("created_time")
         if c_time:
-            # Simple ISO parse (Python 3.7+ handles fromisoformat)
-            # Z usually needs replacement for older pythons, but here:
             ts = datetime.fromisoformat(c_time.replace("Z", "+00:00")).timestamp()
         else:
             ts = time.time()
@@ -195,7 +191,7 @@ def _normalize_rest_message(msg: Dict[str, Any], default_market_id: str) -> Opti
             market_id=str(msg.get("ticker", default_market_id)),
             type=EventType.TRADE,
             payload={
-                "price": float(msg.get("yes_price", 0)) / 100.0 if "yes_price" in msg else float(msg.get("price", 0)) / 100.0,
+                "price": float(msg.get("yes_price", 0)) if "yes_price" in msg else float(msg.get("price", 0)),
                 "size": float(msg.get("count", 0)),
                 "side": normalized_side,
             },
@@ -237,27 +233,41 @@ async def _subscribe_stream(
     if not markets:
         return
 
+    print(f"[WS] Connecting to Kalshi WebSocket...")
     headers = _ws_auth_headers()
     async with websockets.connect(KALSHI_WS_URL, additional_headers=headers) as ws:
         sub_msg = {
             "id": 1,
             "cmd": "subscribe",
             "params": {
-                "channels": ["orderbook_delta", "trades"],
+                "channels": ["orderbook_delta", "trade"],  # "trade" not "trades"
                 "market_tickers": markets,
             },
         }
+        print(f"[WS] Subscribing to {len(markets)} markets on channels: orderbook_delta, trade")
         await ws.send(json.dumps(sub_msg))
 
+        msg_count = 0
+        event_count = 0
         async for raw in ws:
+            msg_count += 1
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
+                print(f"[WS] Failed to parse message {msg_count}")
                 continue
+
+            if msg_count <= 3:
+                print(f"[WS] Message {msg_count}: {msg.get('type', 'unknown')} - {str(msg)[:100]}")
 
             evt = _normalize_ws_message(msg, meta_registry=meta_registry)
             if evt is not None:
+                event_count += 1
+                if event_count <= 5:
+                    print(f"[WS] Event {event_count}: {evt.type.value} for {evt.market_id}")
                 yield evt
+            elif msg_count % 100 == 0:
+                print(f"[WS] Received {msg_count} messages, {event_count} events processed")
 
 
 def _normalize_ws_message(

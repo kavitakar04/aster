@@ -1,189 +1,141 @@
-"""
-train_offline.py
-Batch trains models for all active markets in a series.
-"""
 import argparse
 import glob
 import json
 import os
-import time
 import pandas as pd
+import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-# Imports from your project structure
-from orderbook import OrderbookState, RawEvent, EventType
-from pipeline_logger import TickStore
+from orderbook import OrderbookState, RawEvent, EventType, TickStore
 from features import compute_micro_features
-from models import ProbDistributionMLP, make_default_grid, train_model
+from models import MarketAgent, build_gaussian_targets
 from io_kalshi import fetch_series_markets, fetch_orderbook_history
+from cfbd_fetcher import build_registry
 
-"""
-train_offline.py (Fixing the replay logic)
-"""
+# --- Optimized Vectorized Feature Extraction ---
 
-
-
-def replay_and_extract_vectorized(market_id: str, raw_events: list):
+def replay_trades_vectorized(market_id: str, raw_events: list):
     """
-    Replays history to generate training features.
-    Robustly handles raw REST API data formats (created_time vs ts_exchange).
+    Phase 1: Fast training on Trade history (REST API).
+    Returns (X, P, S) tensors.
     """
-    # 1. Load Data
     df = pd.DataFrame(raw_events)
-    if df.empty:
-        return None, None, None
+    if df.empty or "yes_price" not in df.columns: return None, None, None
 
-    # 2. Normalize Timestamp Column
-    # The /trades endpoint returns 'created_time' (ISO string)
-    if "ts_exchange" not in df.columns:
-        if "created_time" in df.columns:
-            # Convert ISO string to float timestamp (seconds)
-            df["ts_exchange"] = (pd.to_datetime(df["created_time"]).astype('int64') // 10**9).astype(float)
-        elif "ts" in df.columns:
-            df["ts_exchange"] = df["ts"].astype(float)
-        else:
-            # Fallback: if no timestamp found, skip this batch
-            print(f"[{market_id}] Error: No timestamp column found in data keys: {list(df.columns)}")
-            return None, None, None
+    df["price"] = df["yes_price"] / 100.0
+    df["ts"] = pd.to_datetime(df["created_time"]).astype(int) // 10**9
+    df = df.sort_values("ts").reset_index(drop=True)
 
-    # Ensure it's sorted
-    df = df.sort_values("ts_exchange")
+    df["vel"] = df["count"].rolling(10).count() / 10.0
+    df["yes_ratio"] = (df["taker_side"] == "yes").rolling(10).mean()
 
-    # 3. Vectorized Quote Velocity
-    # We index by Datetime to use rolling()
-    df["ts_dt"] = pd.to_datetime(df["ts_exchange"], unit="s")
-    df = df.set_index("ts_dt")
-    
-    # Identify quotes vs trades (REST history is usually just trades, so vel might be 0, which is fine)
-    # We check if 'type' column exists or infer from payload
-    if "type" in df.columns:
-        df["is_quote"] = df["type"].astype(str).str.upper().str.contains("QUOTE")
-    else:
-        df["is_quote"] = False # Trade history contains no quotes
+    N = len(df)
+    feats = np.zeros((N, 9), dtype=np.float32)
+    feats[:, 0] = df["price"].values
+    feats[:, 1] = 0.05  # Assumed spread
+    feats[:, 2] = (df["yes_ratio"] - 0.5) * 2  # Depth imbalance proxy
+    feats[:, 4] = df["vel"].fillna(0).values
 
-    df["vec_quote_vel"] = df["is_quote"].rolling("10s").sum() / 10.0
-    df = df.reset_index(drop=False)
+    targets = np.roll(df["price"].values, -1)
 
-    # Convert ts_dt Timestamp column to string for JSON serialization later
-    if "ts_dt" in df.columns:
-        df["ts_dt"] = df["ts_dt"].apply(lambda x: x.isoformat() if isinstance(x, pd.Timestamp) else x)
+    X = torch.tensor(feats, dtype=torch.float32)[20:-1]
+    P = torch.tensor(targets, dtype=torch.float32)[20:-1]
+    S = torch.full_like(P, 0.05)
 
-    # 4. Replay Loop
-    ticks = TickStore(storage_path=f"data/train_tmp/{market_id}", max_events_per_market=100000)
-    book = OrderbookState(market_id=market_id)
-    
-    X, p_mid, spread = [], [], []
+    return X, P, S
 
-    for _, row in df.iterrows():
-        # Defensive payload parsing: raw REST data is already a dict,
-        # but if read from parquet it might be a string json.
-        payload = row.get("payload")
-        if isinstance(payload, str):
-            payload = json.loads(payload)
-        elif payload is None:
-            # If payload isn't nested (common in REST), normalize from API format
-            # API uses 'count', 'yes_price', 'taker_side'
-            # Internal format uses 'size', 'price', 'side'
-            payload = {
-                "price": float(row.get("price", 0)),
-                "size": float(row.get("count", 0)),
-                "side": "BUY" if row.get("taker_side") == "yes" else "SELL",
-            }
+def replay_stream_vectorized(market_id: str, tick_files: list):
+    """Phase 2: Retraining on high-fidelity Streamed data (Parquet)."""
+    dfs = [pd.read_parquet(f) for f in tick_files]
+    if not dfs: return None, None, None
+    df = pd.concat(dfs).sort_values("ts_exchange")
+    df = df[df["market_id"] == market_id]
 
-        # Construct RawEvent
-        # Trades from REST don't have a 'type' field usually, so we default to TRADE
-        evt_type = EventType.TRADE
-        if "type" in row and "QUOTE" in str(row["type"]).upper():
-            evt_type = EventType.QUOTE
+    import json
+    df["p"] = df["payload"].apply(lambda x: json.loads(x) if isinstance(x, str) else x)
 
+    book = OrderbookState(market_id)
+    ticks = TickStore()
+
+    X_list, P_list, S_list = [], [], []
+    records = df.to_dict('records')
+
+    for row in records:
         evt = RawEvent(
-            ts_exchange=float(row["ts_exchange"]),
-            ts_ingest=float(time.time()),
+            ts_exchange=row["ts_exchange"],
+            ts_ingest=row["ts_exchange"],
             market_id=market_id,
-            type=evt_type,
-            payload=payload,
-            seq=row.get("seq") # Might be None, that's allowed
+            type=EventType(row["type"]),
+            payload=row["p"],
+            seq=row.get("seq")
         )
 
         ticks.record_event(evt)
         book.apply_event(evt)
 
-        # We generate a training sample for every event (since we are data-starved with just trades)
-        # In a full orderbook stream, we might only trigger on quotes, but here we trigger on trades too.
-        feats = compute_micro_features(book, ticks, evt.ts_exchange, meta=None)
-        
-        # Override velocity with our vectorized calculation
-        feats[4] = float(row["vec_quote_vel"]) 
-        
-        # Only add sample if the book is valid (has both bid and ask)
-        # Otherwise the target (midpoint) is garbage
-        if book.midpoint_prob() > 0 and book.spread_prob() > 0:
-            X.append(feats)
-            p_mid.append(book.midpoint_prob())
-            spread.append(book.spread_prob())
+        if evt.type == EventType.QUOTE and book.midpoint_prob() > 0:
+            if row.get("seq", 0) % 5 != 0: continue  # Downsample
 
-    if not X:
-        return None, None, None
+            f = compute_micro_features(book, ticks, evt.ts_exchange)
+            X_list.append(f)
+            P_list.append(book.midpoint_prob())
+            S_list.append(book.spread_prob())
 
-    return torch.stack(X), torch.tensor(p_mid), torch.tensor(spread)
-def train_market(market_ticker: str, epochs: int):
-    print(f"[{market_ticker}] Fetching history...")
-    try:
-        # 1. Pull History (The Primer)
-        events = fetch_orderbook_history(market_ticker)
-        if not events:
-            print(f"[{market_ticker}] No history found. Skipping.")
-            return
+    if not X_list: return None, None, None
 
-        # 2. Extract Features
-        X_raw, P, S = replay_and_extract_vectorized(market_ticker, events)
-        if X_raw is None or len(X_raw) < 50:
-            print(f"[{market_ticker}] Insufficient training data ({len(events)} events). Skipping.")
-            return
+    return torch.stack(X_list), torch.tensor(P_list), torch.tensor(S_list)
 
-        # 3. Normalize & Save Stats
-        mu, std = X_raw.mean(0), X_raw.std(0).clamp(min=1e-6)
-        os.makedirs("normalization", exist_ok=True)
-        torch.save({"mean": mu, "std": std}, f"normalization/{market_ticker}_norm.pt")
-        
-        X = (X_raw - mu) / std
+# --- Main Training Logic ---
 
-        # 4. Train Model
-        grid = make_default_grid()
-        model = ProbDistributionMLP(d_in=X.shape[1], K=grid.K)
-        opt = torch.optim.Adam(model.parameters(), lr=1e-3)
-        
-        # Create weighted dataset (simple weights for now)
-        weights = torch.ones_like(P) 
-        loader = DataLoader(TensorDataset(X, make_default_grid().values, weights), batch_size=256, shuffle=True)
-        # Note: Ideally you pass built targets Q to DataLoader, simplifying here for brevity
+def train_job(market_id: str, X: torch.Tensor, P: torch.Tensor, S: torch.Tensor, epochs: int):
+    if len(X) < 50: return
 
-        # (Simulated Training Loop matching your `train_model` signature)
-        # In real usage, ensure `train_model` accepts (X, P, W) or specific targets
-        
-        os.makedirs("models_ckpts", exist_ok=True)
-        torch.save(model.state_dict(), f"models_ckpts/{market_ticker}.pt")
-        print(f"[{market_ticker}] Trained & Saved.")
-        
-    except Exception as e:
-        print(f"[{market_ticker}] Failed: {e}")
+    agent = MarketAgent(market_id)
+
+    mu, std = X.mean(0), X.std(0)
+    agent.set_normalization(mu, std)
+    X_norm = agent.normalize(X)
+
+    Q = build_gaussian_targets(agent.grid, P, S)
+
+    dataset = TensorDataset(X_norm, Q, torch.ones(len(X)))
+    loader = DataLoader(dataset, batch_size=256, shuffle=True)
+
+    print(f"[{market_id}] Training {epochs} epochs on {len(X)} samples...")
+    for _ in range(epochs):
+        loss = agent.train_epoch(loader)
+
+    print(f"[{market_id}] Final Loss: {loss:.4f}")
+    agent.save()
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--series", default="KXNCAAFGAME", help="Kalshi series ticker")
+    parser.add_argument("--series", default="KXNCAAFGAME")
     parser.add_argument("--epochs", type=int, default=5)
+    parser.add_argument("--retrain", action="store_true", help="Use stream files")
     args = parser.parse_args()
 
-    # 1. Discovery
-    print(f"Fetching active markets for series: {args.series}")
     markets = fetch_series_markets(series_ticker=args.series)
     tickers = [m["ticker"] for m in markets]
-    print(f"Found {len(tickers)} active markets.")
 
-    # 2. Batch Train
-    for ticker in tickers:
-        train_market(ticker, args.epochs)
+    registry_df = build_registry(markets)
+    os.makedirs("data/meta", exist_ok=True)
+    registry_df.to_parquet("data/meta/meta_registry.parquet")
+
+    if args.retrain:
+        tick_files = glob.glob("data/ticks/ticks_*.parquet")
+        for ticker in tickers:
+            X, P, S = replay_stream_vectorized(ticker, tick_files)
+            if X is not None:
+                train_job(ticker, X, P, S, args.epochs)
+    else:
+        for ticker in tickers:
+            print(f"[{ticker}] Fetching history...")
+            events = fetch_orderbook_history(ticker)
+            X, P, S = replay_trades_vectorized(ticker, events)
+            if X is not None:
+                train_job(ticker, X, P, S, args.epochs)
 
 if __name__ == "__main__":
     main()
